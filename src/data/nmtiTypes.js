@@ -123,24 +123,38 @@ export const DEFAULT_NORM = {
 export function calculateNMTI(rawScores) {
   const { JP, IE, FT, SN } = rawScores;
 
-  const code =
-    (IE >= DEFAULT_NORM.IE ? 'I' : 'E') +
-    (JP >= DEFAULT_NORM.JP ? 'J' : 'P') +
-    (FT >= DEFAULT_NORM.FT ? 'F' : 'T') +
-    (SN >= DEFAULT_NORM.SN ? 'S' : 'N');
+  const deviations = {
+    JP: JP - DEFAULT_NORM.JP,
+    IE: IE - DEFAULT_NORM.IE,
+    FT: FT - DEFAULT_NORM.FT,
+    SN: SN - DEFAULT_NORM.SN
+  };
 
-  const type = NMTI_TYPES[code] || NMTI_TYPES.IJFS;
+  const typeScores = Object.entries(NMTI_TYPES).map(([code, typeInfo]) => {
+    const expectedDeviations = {
+      JP: code[1] === 'J' ? 1 : -1,
+      IE: code[0] === 'I' ? -1 : 1,
+      FT: code[2] === 'F' ? 1 : -1,
+      SN: code[3] === 'S' ? 1 : -1
+    };
+
+    const matchScore = Math.abs(deviations.JP - expectedDeviations.JP) +
+                      Math.abs(deviations.IE - expectedDeviations.IE) +
+                      Math.abs(deviations.FT - expectedDeviations.FT) +
+                      Math.abs(deviations.SN - expectedDeviations.SN);
+
+    return { code, typeInfo, matchScore };
+  });
+
+  const bestMatch = typeScores.reduce((best, current) => 
+    current.matchScore < best.matchScore ? current : best
+  );
 
   return {
-    code,
-    type,
+    code: bestMatch.code,
+    type: bestMatch.typeInfo,
     rawScores,
-    deviations: {
-      JP: JP - DEFAULT_NORM.JP,
-      IE: IE - DEFAULT_NORM.IE,
-      FT: FT - DEFAULT_NORM.FT,
-      SN: SN - DEFAULT_NORM.SN
-    }
+    deviations
   };
 }
 
@@ -148,46 +162,43 @@ export function getEvolutionPath(result) {
   const { code, deviations } = result;
   const path = [];
 
-  if (deviations.JP > 0 && deviations.JP <= 3) {
-    path.push({
-      dimension: 'JP',
-      action: '少回一个"收到"',
-      from: code[0],
-      to: code[0] === 'J' ? 'P' : 'J',
-      currentScore: deviations.JP + DEFAULT_NORM.JP,
-      targetScore: DEFAULT_NORM.JP - 1
-    });
-  }
-  if (deviations.IE > 0 && deviations.IE <= 3) {
-    path.push({
-      dimension: 'IE',
-      action: '少一点精神内耗',
-      from: code[1],
-      to: code[1] === 'I' ? 'E' : 'I',
-      currentScore: deviations.IE + DEFAULT_NORM.IE,
-      targetScore: DEFAULT_NORM.IE - 1
-    });
-  }
-  if (deviations.FT > 0 && deviations.FT <= 3) {
-    path.push({
-      dimension: 'FT',
-      action: '少当一次大冤种',
-      from: code[2],
-      to: code[2] === 'F' ? 'T' : 'F',
-      currentScore: deviations.FT + DEFAULT_NORM.FT,
-      targetScore: DEFAULT_NORM.FT - 1
-    });
-  }
-  if (deviations.SN > 0 && deviations.SN <= 3) {
-    path.push({
-      dimension: 'SN',
-      action: '少一点务实精神',
-      from: code[3],
-      to: code[3] === 'S' ? 'N' : 'S',
-      currentScore: deviations.SN + DEFAULT_NORM.SN,
-      targetScore: DEFAULT_NORM.SN - 1
-    });
-  }
+  const evolutionActions = {
+    JP: {
+      J: { action: '少回一个"收到"', target: 'P' },
+      P: { action: '多回一个"收到"', target: 'J' }
+    },
+    IE: {
+      I: { action: '少一点精神内耗', target: 'E' },
+      E: { action: '多一点社交互动', target: 'I' }
+    },
+    FT: {
+      F: { action: '少当一次大冤种', target: 'T' },
+      T: { action: '多一点人情味', target: 'F' }
+    },
+    SN: {
+      S: { action: '少一点务实精神', target: 'N' },
+      N: { action: '多一点脚踏实地', target: 'S' }
+    }
+  };
+
+  Object.entries(deviations).forEach(([dimension, deviation]) => {
+    const currentType = dimension === 'JP' ? code[1] : 
+                       dimension === 'IE' ? code[0] :
+                       dimension === 'FT' ? code[2] : code[3];
+    
+    const actionConfig = evolutionActions[dimension][currentType];
+    
+    if (actionConfig && Math.abs(deviation) >= 1) {
+      path.push({
+        dimension,
+        action: actionConfig.action,
+        from: currentType,
+        to: actionConfig.target,
+        currentScore: deviation + DEFAULT_NORM[dimension],
+        targetScore: DEFAULT_NORM[dimension]
+      });
+    }
+  });
 
   return path;
 }
